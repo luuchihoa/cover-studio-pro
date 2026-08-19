@@ -3,9 +3,7 @@ import {
   FlipHorizontal,
   FlipVertical,
   Sparkles,
-  Sliders,
-  Maximize,
-  CircleDot
+  Sliders
 } from 'lucide-react';
 import { ImageCanvasObject, ImageFilters } from '../../types/canvas';
 
@@ -20,7 +18,28 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
   onUpdateImage,
   onUpdateFilters
 }) => {
-  const { stickerOutline, filters, borderRadius, flipX, flipY, maskShape = 'none' } = selectedObject;
+  const stickerOutline = selectedObject.stickerOutline || {
+    enabled: false,
+    color: '#FFFFFF',
+    width: 6,
+    glow: true
+  };
+
+  const filters = selectedObject.filters || {
+    brightness: 0,
+    contrast: 0,
+    saturation: 0,
+    blur: 0,
+    grayscale: false,
+    sepia: false,
+    invert: false,
+    vignette: 0
+  };
+
+  const borderRadius = selectedObject.borderRadius || 0;
+  const flipX = selectedObject.flipX || false;
+  const flipY = selectedObject.flipY || false;
+  const maskShape = selectedObject.maskShape || 'none';
 
   return (
     <div className="space-y-5 text-xs text-neutral-300">
@@ -90,7 +109,7 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
         )}
       </div>
 
-      {/* 2. Viền Sáng Chủ Thể (Sticker White Outline Glow - MrBeast Thumbnail) */}
+      {/* 2. Viền Sáng Chủ Thể (Sticker White Outline Glow) */}
       <div className="p-3 bg-neutral-950/80 rounded-xl border border-neutral-800 space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="font-bold text-neutral-300 flex items-center gap-1.5">
@@ -114,7 +133,7 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={stickerOutline.color}
+                value={stickerOutline.color || '#FFFFFF'}
                 onChange={(e) =>
                   onUpdateImage({
                     stickerOutline: { ...stickerOutline, color: e.target.value }
@@ -125,13 +144,13 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
               <div className="flex-1">
                 <div className="flex justify-between text-[10px] text-neutral-400">
                   <span>Độ dày viền</span>
-                  <span>{stickerOutline.width}px</span>
+                  <span>{stickerOutline.width || 6}px</span>
                 </div>
                 <input
                   type="range"
                   min="2"
                   max="25"
-                  value={stickerOutline.width}
+                  value={stickerOutline.width || 6}
                   onChange={(e) =>
                     onUpdateImage({
                       stickerOutline: { ...stickerOutline, width: Number(e.target.value) }
@@ -146,7 +165,7 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
               <span className="text-neutral-400">Bật phát sáng (Outer Glow)</span>
               <input
                 type="checkbox"
-                checked={stickerOutline.glow}
+                checked={stickerOutline.glow || false}
                 onChange={(e) =>
                   onUpdateImage({
                     stickerOutline: { ...stickerOutline, glow: e.target.checked }
@@ -170,13 +189,13 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
         <div>
           <div className="flex justify-between text-[10px] text-neutral-400 mb-0.5">
             <span>Độ sáng (Brightness)</span>
-            <span>{filters.brightness > 0 ? `+${filters.brightness}` : filters.brightness}%</span>
+            <span>{filters.brightness > 0 ? `+${filters.brightness}` : filters.brightness || 0}%</span>
           </div>
           <input
             type="range"
             min="-50"
             max="50"
-            value={filters.brightness}
+            value={filters.brightness || 0}
             onChange={(e) => onUpdateFilters({ brightness: Number(e.target.value) })}
             className="w-full accent-indigo-500"
           />
@@ -186,13 +205,13 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
         <div>
           <div className="flex justify-between text-[10px] text-neutral-400 mb-0.5">
             <span>Tương phản (Contrast)</span>
-            <span>{filters.contrast > 0 ? `+${filters.contrast}` : filters.contrast}%</span>
+            <span>{filters.contrast > 0 ? `+${filters.contrast}` : filters.contrast || 0}%</span>
           </div>
           <input
             type="range"
             min="-50"
             max="50"
-            value={filters.contrast}
+            value={filters.contrast || 0}
             onChange={(e) => onUpdateFilters({ contrast: Number(e.target.value) })}
             className="w-full accent-indigo-500"
           />
@@ -202,13 +221,13 @@ export const ImageControls: React.FC<ImageControlsProps> = ({
         <div>
           <div className="flex justify-between text-[10px] text-neutral-400 mb-0.5">
             <span>Độ rực màu (Saturation)</span>
-            <span>{filters.saturation > 0 ? `+${filters.saturation}` : filters.saturation}%</span>
+            <span>{filters.saturation > 0 ? `+${filters.saturation}` : filters.saturation || 0}%</span>
           </div>
           <input
             type="range"
             min="-50"
             max="50"
-            value={filters.saturation}
+            value={filters.saturation || 0}
             onChange={(e) => onUpdateFilters({ saturation: Number(e.target.value) })}
             className="w-full accent-indigo-500"
           />

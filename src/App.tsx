@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AspectRatioType, CanvasObject, BackgroundSettings, SafeZoneType } from './types/canvas';
 import { ASPECT_RATIOS, TEMPLATE_PRESETS, TemplatePreset } from './utils/presets';
 import { TopNav } from './components/Header/TopNav';
@@ -9,7 +9,46 @@ import { MockupPreviewModal } from './components/Modal/MockupPreviewModal';
 import { ExportModal } from './components/Modal/ExportModal';
 import { exportProjectJSON } from './utils/exportCanvas';
 
-export const App: React.FC = () => {
+// Error boundary to protect the app from crashing on corrupted objects
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: '' };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error: String(error) };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('App Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 space-y-4">
+          <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-800 text-center max-w-md">
+            <h2 className="text-lg font-bold text-rose-400 mb-2">Đã tự động khôi phục giao diện</h2>
+            <p className="text-xs text-neutral-300 mb-4">Một phần tử vừa chỉnh sửa có thuộc tính không hợp lệ.</p>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 font-bold text-xs rounded-xl transition-all"
+            >
+              Tải lại trang sạch
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export const AppContent: React.FC = () => {
   const [currentRatio, setCurrentRatio] = useState<AspectRatioType>('16:9');
   const [bgSettings, setBgSettings] = useState<BackgroundSettings>(TEMPLATE_PRESETS[0].bgSettings);
   const [objects, setObjects] = useState<CanvasObject[]>(TEMPLATE_PRESETS[0].objects);
@@ -21,11 +60,12 @@ export const App: React.FC = () => {
   const [isMockupOpen, setIsMockupOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
 
-  // History for Undo / Redo
+  // Capped History for Undo / Redo (max 20 steps to avoid RAM leak)
   const [history, setHistory] = useState<{ objects: CanvasObject[]; bgSettings: BackgroundSettings; ratio: AspectRatioType }[]>([
     { objects: TEMPLATE_PRESETS[0].objects, bgSettings: TEMPLATE_PRESETS[0].bgSettings, ratio: '16:9' }
   ]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
+  const historyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canvasWidth = ASPECT_RATIOS[currentRatio].width;
   const canvasHeight = ASPECT_RATIOS[currentRatio].height;
@@ -34,8 +74,8 @@ export const App: React.FC = () => {
   const calculateZoomFit = useCallback((ratio: AspectRatioType = currentRatio) => {
     const w = ASPECT_RATIOS[ratio].width;
     const h = ASPECT_RATIOS[ratio].height;
-    const availWidth = window.innerWidth - 640 - 80; // subtracting 2 sidebars + padding
-    const availHeight = window.innerHeight - 64 - 80; // subtracting topnav + padding
+    const availWidth = window.innerWidth - 640 - 80;
+    const availHeight = window.innerHeight - 64 - 80;
 
     const scaleX = availWidth / w;
     const scaleY = availHeight / h;
@@ -50,36 +90,50 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [calculateZoomFit, currentRatio]);
 
-  // Push state to history
-  const pushHistory = (newObjects: CanvasObject[], newBg: BackgroundSettings = bgSettings, newRatio: AspectRatioType = currentRatio) => {
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push({
-      objects: JSON.parse(JSON.stringify(newObjects)),
-      bgSettings: JSON.parse(JSON.stringify(newBg)),
-      ratio: newRatio
-    });
-    setHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
-  };
+  // Safe Push State to History (capped at 20 steps to protect browser memory)
+  const pushHistory = useCallback((newObjects: CanvasObject[], newBg: BackgroundSettings = bgSettings, newRatio: AspectRatioType = currentRatio) => {
+    if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+    
+    historyDebounceRef.current = setTimeout(() => {
+      setHistory(prev => {
+        let newHistory = prev.slice(0, historyIndex + 1);
+        newHistory.push({
+          objects: JSON.parse(JSON.stringify(newObjects)),
+          bgSettings: JSON.parse(JSON.stringify(newBg)),
+          ratio: newRatio
+        });
+        // Cap max history to 20 to prevent memory leak
+        if (newHistory.length > 20) {
+          newHistory = newHistory.slice(newHistory.length - 20);
+        }
+        setHistoryIndex(newHistory.length - 1);
+        return newHistory;
+      });
+    }, 250);
+  }, [bgSettings, currentRatio, historyIndex]);
 
   // Undo / Redo handlers
   const handleUndo = () => {
     if (historyIndex > 0) {
       const targetState = history[historyIndex - 1];
-      setObjects(targetState.objects);
-      setBgSettings(targetState.bgSettings);
-      setCurrentRatio(targetState.ratio);
-      setHistoryIndex(historyIndex - 1);
+      if (targetState) {
+        setObjects(targetState.objects);
+        setBgSettings(targetState.bgSettings);
+        setCurrentRatio(targetState.ratio);
+        setHistoryIndex(historyIndex - 1);
+      }
     }
   };
 
   const handleRedo = () => {
     if (historyIndex < history.length - 1) {
       const targetState = history[historyIndex + 1];
-      setObjects(targetState.objects);
-      setBgSettings(targetState.bgSettings);
-      setCurrentRatio(targetState.ratio);
-      setHistoryIndex(historyIndex + 1);
+      if (targetState) {
+        setObjects(targetState.objects);
+        setBgSettings(targetState.bgSettings);
+        setCurrentRatio(targetState.ratio);
+        setHistoryIndex(historyIndex + 1);
+      }
     }
   };
 
@@ -88,7 +142,6 @@ export const App: React.FC = () => {
     setCurrentRatio(ratio);
     calculateZoomFit(ratio);
 
-    // Auto toggle safe zone recommendation
     if (safeZone !== 'none') {
       setSafeZone(ratio === '9:16' ? 'tiktok' : 'youtube');
     }
@@ -104,11 +157,6 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateObject = (id: string, updates: Partial<CanvasObject>) => {
-    const updated = objects.map((obj) => (obj.id === id ? ({ ...obj, ...updates } as CanvasObject) : obj));
-    setObjects(updated);
-  };
-
-  const handleCommitUpdate = (id: string, updates: Partial<CanvasObject>) => {
     const updated = objects.map((obj) => (obj.id === id ? ({ ...obj, ...updates } as CanvasObject) : obj));
     setObjects(updated);
     pushHistory(updated);
@@ -127,16 +175,16 @@ export const App: React.FC = () => {
     const duplicated: CanvasObject = {
       ...JSON.parse(JSON.stringify(target)),
       id: `${target.type}_${Date.now()}`,
-      name: `${target.name} (Copy)`,
-      x: target.x + 30,
-      y: target.y + 30,
+      name: `${target.name || target.type} (Copy)`,
+      x: (target.x || 0) + 30,
+      y: (target.y || 0) + 30,
       zIndex: Date.now()
     };
     handleAddObject(duplicated);
   };
 
   const handleMoveLayer = (id: string, direction: 'up' | 'down') => {
-    const sorted = [...objects].sort((a, b) => a.zIndex - b.zIndex);
+    const sorted = [...objects].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
     const index = sorted.findIndex((o) => o.id === id);
     if (index === -1) return;
 
@@ -211,7 +259,7 @@ export const App: React.FC = () => {
         const json = JSON.parse(event.target?.result as string);
         if (json.aspectRatio && json.objects) {
           setCurrentRatio(json.aspectRatio);
-          setBgSettings(json.bgSettings);
+          setBgSettings(json.bgSettings || TEMPLATE_PRESETS[0].bgSettings);
           setObjects(json.objects);
           setSelectedId(json.objects[0]?.id || null);
           pushHistory(json.objects, json.bgSettings, json.aspectRatio);
@@ -224,7 +272,7 @@ export const App: React.FC = () => {
     e.target.value = '';
   };
 
-  const selectedObject = objects.find((o) => o.id === selectedId) || null;
+  const selectedObject = objects.find((o) => o && o.id === selectedId) || null;
 
   return (
     <div className="flex flex-col h-screen w-screen bg-neutral-950 text-neutral-100 overflow-hidden font-sans">
@@ -255,7 +303,7 @@ export const App: React.FC = () => {
 
       {/* 2. Main Studio Work Area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar: Tools, Typography Presets, Images, Shapes, Background */}
+        {/* Left Sidebar */}
         <LeftSidebar
           onAddObject={handleAddObject}
           onApplyTemplate={handleApplyTemplate}
@@ -265,7 +313,7 @@ export const App: React.FC = () => {
           canvasHeight={canvasHeight}
         />
 
-        {/* Center Workspace: HTML5 Canvas with Drag, Resize, Rotate & Snapping */}
+        {/* Center Workspace */}
         <CanvasWorkspace
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
@@ -279,12 +327,12 @@ export const App: React.FC = () => {
           onZoomChange={setZoomLevel}
         />
 
-        {/* Right Sidebar: Object Properties & Layer Stack */}
+        {/* Right Sidebar */}
         <RightSidebar
           selectedObject={selectedObject}
           objects={objects}
           onSelectObject={setSelectedId}
-          onUpdateObject={handleCommitUpdate}
+          onUpdateObject={handleUpdateObject}
           onMoveLayer={handleMoveLayer}
           onDuplicate={handleDuplicateObject}
           onDelete={handleDeleteObject}
@@ -313,6 +361,14 @@ export const App: React.FC = () => {
         objects={objects}
       />
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
   );
 };
 

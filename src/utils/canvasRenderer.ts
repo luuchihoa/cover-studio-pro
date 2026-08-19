@@ -4,8 +4,12 @@ import { CanvasObject, BackgroundSettings, TextCanvasObject, ImageCanvasObject, 
 const imageElementCache: Map<string, HTMLImageElement> = new Map();
 
 export const preloadImage = (src: string): Promise<HTMLImageElement> => {
+  if (!src) return Promise.reject(new Error('Empty src'));
   if (imageElementCache.has(src)) {
-    return Promise.resolve(imageElementCache.get(src)!);
+    const cached = imageElementCache.get(src)!;
+    if (cached.complete && cached.naturalWidth > 0) {
+      return Promise.resolve(cached);
+    }
   }
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -36,51 +40,61 @@ export const renderSceneToCanvas = async (
     snappingLines?: { x?: number; y?: number };
   } = {}
 ) => {
-  const { scale = 1, selectedId = null, drawSafeZone = 'none', isExporting = false, snappingLines } = options;
+  const { selectedId = null, drawSafeZone = 'none', isExporting = false, snappingLines } = options;
 
   ctx.save();
   ctx.clearRect(0, 0, width, height);
 
-  // 1. Draw Background
-  await drawBackground(ctx, width, height, bgSettings);
+  // 1. Draw Background safely
+  try {
+    await drawBackground(ctx, width, height, bgSettings);
+  } catch (err) {
+    ctx.fillStyle = bgSettings?.color || '#111827';
+    ctx.fillRect(0, 0, width, height);
+  }
 
   // 2. Draw Objects sorted by zIndex
-  const sortedObjects = [...objects].filter(obj => obj.isVisible).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedObjects = [...(objects || [])].filter(obj => obj && obj.isVisible).sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
   for (const obj of sortedObjects) {
-    ctx.save();
-    ctx.globalAlpha = obj.opacity;
+    try {
+      ctx.save();
+      ctx.globalAlpha = typeof obj.opacity === 'number' ? Math.max(0, Math.min(1, obj.opacity)) : 1;
 
-    // Apply translation & rotation around object center
-    const centerX = obj.x + obj.width / 2;
-    const centerY = obj.y + obj.height / 2;
-    ctx.translate(centerX, centerY);
-    ctx.rotate((obj.rotation * Math.PI) / 180);
-    ctx.translate(-centerX, -centerY);
+      // Apply translation & rotation around object center
+      const centerX = (obj.x || 0) + (obj.width || 100) / 2;
+      const centerY = (obj.y || 0) + (obj.height || 100) / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(((obj.rotation || 0) * Math.PI) / 180);
+      ctx.translate(-centerX, -centerY);
 
-    if (obj.type === 'text') {
-      drawTextObject(ctx, obj as TextCanvasObject);
-    } else if (obj.type === 'image') {
-      await drawImageObject(ctx, obj as ImageCanvasObject);
-    } else if (obj.type === 'shape') {
-      drawShapeObject(ctx, obj as ShapeCanvasObject);
-    } else if (obj.type === 'badge') {
-      drawBadgeObject(ctx, obj as BadgeCanvasObject);
+      if (obj.type === 'text') {
+        drawTextObject(ctx, obj as TextCanvasObject);
+      } else if (obj.type === 'image') {
+        await drawImageObject(ctx, obj as ImageCanvasObject);
+      } else if (obj.type === 'shape') {
+        drawShapeObject(ctx, obj as ShapeCanvasObject);
+      } else if (obj.type === 'badge') {
+        drawBadgeObject(ctx, obj as BadgeCanvasObject);
+      }
+
+      ctx.restore();
+    } catch (objErr) {
+      console.warn('Error rendering object:', obj.id, objErr);
+      ctx.restore();
     }
-
-    ctx.restore();
   }
 
   // 3. Draw Selection Bounding Box & Handles (if not exporting)
   if (!isExporting && selectedId) {
-    const selectedObj = objects.find(o => o.id === selectedId);
+    const selectedObj = objects.find(o => o && o.id === selectedId);
     if (selectedObj && selectedObj.isVisible) {
       drawSelectionBox(ctx, selectedObj);
     }
   }
 
   // 4. Draw Safe Zone Overlay (if not exporting)
-  if (!isExporting && drawSafeZone !== 'none') {
+  if (!isExporting && drawSafeZone && drawSafeZone !== 'none') {
     drawSafeZoneOverlay(ctx, width, height, drawSafeZone);
   }
 
@@ -101,11 +115,17 @@ const drawBackground = async (
   height: number,
   bg: BackgroundSettings
 ) => {
+  if (!bg) {
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, width, height);
+    return;
+  }
+
   ctx.save();
   if (bg.type === 'color') {
-    ctx.fillStyle = bg.color;
+    ctx.fillStyle = bg.color || '#111827';
     ctx.fillRect(0, 0, width, height);
-  } else if (bg.type === 'gradient') {
+  } else if (bg.type === 'gradient' && bg.gradient) {
     let grad: CanvasGradient;
     if (bg.gradient.direction === 'horizontal') {
       grad = ctx.createLinearGradient(0, 0, width, 0);
@@ -116,18 +136,18 @@ const drawBackground = async (
     } else {
       grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, width / 1.5);
     }
-    grad.addColorStop(0, bg.gradient.start);
-    grad.addColorStop(1, bg.gradient.end);
+    grad.addColorStop(0, bg.gradient.start || '#0f172a');
+    grad.addColorStop(1, bg.gradient.end || '#1e1b4b');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
   } else if (bg.type === 'image' && bg.imageSrc) {
     try {
       const img = await preloadImage(bg.imageSrc);
-      if (bg.imageBlur > 0) {
+      if (bg.imageBlur && bg.imageBlur > 0) {
         ctx.filter = `blur(${bg.imageBlur}px)`;
       }
       // Cover fit
-      const imgRatio = img.naturalWidth / img.naturalHeight;
+      const imgRatio = (img.naturalWidth || 1) / (img.naturalHeight || 1);
       const canvasRatio = width / height;
       let drawW = width, drawH = height, drawX = 0, drawY = 0;
       if (imgRatio > canvasRatio) {
@@ -141,8 +161,8 @@ const drawBackground = async (
       ctx.filter = 'none';
 
       // Overlay
-      if (bg.overlayOpacity > 0) {
-        ctx.fillStyle = bg.overlayColor;
+      if (bg.overlayOpacity && bg.overlayOpacity > 0) {
+        ctx.fillStyle = bg.overlayColor || '#000000';
         ctx.globalAlpha = bg.overlayOpacity;
         ctx.fillRect(0, 0, width, height);
       }
@@ -150,6 +170,9 @@ const drawBackground = async (
       ctx.fillStyle = bg.color || '#111827';
       ctx.fillRect(0, 0, width, height);
     }
+  } else {
+    ctx.fillStyle = bg.color || '#111827';
+    ctx.fillRect(0, 0, width, height);
   }
   ctx.restore();
 };
@@ -158,11 +181,13 @@ const drawBackground = async (
  * Draw Text Object with 3D Extrusion, Double Stroke, Neon Glow & Auto-Pill Box
  */
 const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) => {
-  const { text, style, x, y, width, height } = obj;
-  const lines = text.split('\n');
-  const fontSize = style.fontSize;
+  const { text = '', style, x = 0, y = 0, width = 200 } = obj;
+  if (!style) return;
+
+  const lines = String(text).split('\n');
+  const fontSize = style.fontSize || 48;
   const lineHeight = fontSize * (style.lineHeight || 1.2);
-  const fontStyleStr = `${style.fontStyle === 'italic' ? 'italic ' : ''}${style.fontWeight} ${fontSize}px "${style.fontFamily}", sans-serif`;
+  const fontStyleStr = `${style.fontStyle === 'italic' ? 'italic ' : ''}${style.fontWeight || 700} ${fontSize}px "${style.fontFamily || 'sans-serif'}", sans-serif`;
 
   ctx.font = fontStyleStr;
   ctx.textBaseline = 'top';
@@ -179,14 +204,14 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
   }
 
   // 1. Auto-Pill Highlight Background (CapCut Highlight)
-  if (style.pillBackground && style.pillBackground.enabled) {
+  if (style.pillBackground?.enabled) {
     ctx.save();
-    ctx.globalAlpha = style.pillBackground.opacity ?? 1;
-    ctx.fillStyle = style.pillBackground.color;
+    ctx.globalAlpha = typeof style.pillBackground.opacity === 'number' ? style.pillBackground.opacity : 1;
+    ctx.fillStyle = style.pillBackground.color || '#FFE500';
     
-    const padX = style.pillBackground.paddingX || 20;
-    const padY = style.pillBackground.paddingY || 10;
-    const radius = style.pillBackground.borderRadius || 12;
+    const padX = style.pillBackground.paddingX ?? 20;
+    const padY = style.pillBackground.paddingY ?? 10;
+    const radius = style.pillBackground.borderRadius ?? 12;
 
     lines.forEach((line, index) => {
       const lineY = y + index * lineHeight;
@@ -217,10 +242,10 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
     if (style.textTransform === 'lowercase') displayText = line.toLowerCase();
 
     // Double Stroke (Outer pass)
-    if (style.stroke.enabled && style.stroke.doubleStroke?.enabled) {
+    if (style.stroke?.enabled && style.stroke.doubleStroke?.enabled) {
       ctx.save();
-      ctx.strokeStyle = style.stroke.doubleStroke.color;
-      ctx.lineWidth = style.stroke.width + (style.stroke.doubleStroke.width * 2);
+      ctx.strokeStyle = style.stroke.doubleStroke.color || '#FFFFFF';
+      ctx.lineWidth = (style.stroke.width || 4) + ((style.stroke.doubleStroke.width || 4) * 2);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       ctx.strokeText(displayText, lineX, lineY);
@@ -228,10 +253,10 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
     }
 
     // Primary Stroke
-    if (style.stroke.enabled && style.stroke.width > 0) {
+    if (style.stroke?.enabled && (style.stroke.width || 0) > 0) {
       ctx.save();
-      ctx.strokeStyle = style.stroke.color;
-      ctx.lineWidth = style.stroke.width;
+      ctx.strokeStyle = style.stroke.color || '#000000';
+      ctx.lineWidth = style.stroke.width || 4;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       ctx.strokeText(displayText, lineX, lineY);
@@ -243,12 +268,12 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
       ctx.save();
       if (style.gradient?.enabled) {
         const textMetrics = ctx.measureText(displayText);
-        const grad = ctx.createLinearGradient(lineX, lineY, lineX + textMetrics.width, lineY + fontSize);
-        grad.addColorStop(0, style.gradient.startColor);
-        grad.addColorStop(1, style.gradient.endColor);
+        const grad = ctx.createLinearGradient(lineX, lineY, lineX + (textMetrics.width || 100), lineY + fontSize);
+        grad.addColorStop(0, style.gradient.startColor || '#FFE600');
+        grad.addColorStop(1, style.gradient.endColor || '#FF3B30');
         ctx.fillStyle = grad;
       } else {
-        ctx.fillStyle = style.fillColor;
+        ctx.fillStyle = style.fillColor || '#FFFFFF';
       }
       ctx.fillText(displayText, lineX, lineY);
       ctx.restore();
@@ -256,16 +281,16 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
   };
 
   // 2. 3D Extrusion Effect
-  if (style.effect3D && style.effect3D.enabled && style.effect3D.depth > 0) {
+  if (style.effect3D?.enabled && (style.effect3D.depth || 0) > 0) {
     ctx.save();
-    const depth = style.effect3D.depth;
-    const angleRad = ((style.effect3D.angle || 45) * Math.PI) / 180;
+    const depth = Math.min(30, style.effect3D.depth || 10);
+    const angleRad = (((style.effect3D.angle ?? 45)) * Math.PI) / 180;
     const stepX = Math.cos(angleRad);
     const stepY = Math.sin(angleRad);
 
-    ctx.fillStyle = style.effect3D.color;
-    ctx.strokeStyle = style.effect3D.color;
-    ctx.lineWidth = style.stroke.enabled ? style.stroke.width : 2;
+    ctx.fillStyle = style.effect3D.color || '#000000';
+    ctx.strokeStyle = style.effect3D.color || '#000000';
+    ctx.lineWidth = style.stroke?.enabled ? (style.stroke.width || 2) : 2;
     ctx.lineJoin = 'round';
 
     for (let d = depth; d >= 1; d -= 1) {
@@ -275,7 +300,7 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
         let dt = line;
         if (style.textTransform === 'uppercase') dt = line.toUpperCase();
         ctx.fillText(dt, offX, offY);
-        if (style.stroke.enabled) {
+        if (style.stroke?.enabled) {
           ctx.strokeText(dt, offX, offY);
         }
       });
@@ -284,12 +309,12 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
   }
 
   // 3. Shadow & Glow
-  if (style.shadow && style.shadow.enabled) {
+  if (style.shadow?.enabled) {
     ctx.save();
-    ctx.shadowColor = style.shadow.color;
-    ctx.shadowBlur = style.shadow.blur;
-    ctx.shadowOffsetX = style.shadow.offsetX;
-    ctx.shadowOffsetY = style.shadow.offsetY;
+    ctx.shadowColor = style.shadow.color || 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = style.shadow.blur || 10;
+    ctx.shadowOffsetX = style.shadow.offsetX || 0;
+    ctx.shadowOffsetY = style.shadow.offsetY || 0;
 
     lines.forEach((line, index) => {
       const lineY = y + index * lineHeight;
@@ -311,7 +336,8 @@ const drawTextObject = (ctx: CanvasRenderingContext2D, obj: TextCanvasObject) =>
  * Draw Image Object with Subject Sticker Outline, Filters & Masking
  */
 const drawImageObject = async (ctx: CanvasRenderingContext2D, obj: ImageCanvasObject) => {
-  const { src, x, y, width, height, borderRadius = 0, flipX, flipY, stickerOutline, filters, maskShape = 'none' } = obj;
+  const { src, x = 0, y = 0, width = 100, height = 100, borderRadius = 0, flipX, flipY, stickerOutline, filters, maskShape = 'none' } = obj;
+  if (!src) return;
   
   let img: HTMLImageElement;
   try {
@@ -330,19 +356,19 @@ const drawImageObject = async (ctx: CanvasRenderingContext2D, obj: ImageCanvasOb
   }
 
   // 1. Sticker Outline / Glow (Sticker white glow effect)
-  if (stickerOutline && stickerOutline.enabled && stickerOutline.width > 0) {
+  if (stickerOutline?.enabled && (stickerOutline.width || 0) > 0) {
     ctx.save();
     if (stickerOutline.glow) {
-      ctx.shadowColor = stickerOutline.color;
-      ctx.shadowBlur = stickerOutline.width * 2;
+      ctx.shadowColor = stickerOutline.color || '#FFFFFF';
+      ctx.shadowBlur = (stickerOutline.width || 6) * 2;
     }
     // Draw expanded border rect or shape
-    ctx.strokeStyle = stickerOutline.color;
-    ctx.lineWidth = stickerOutline.width * 2;
+    ctx.strokeStyle = stickerOutline.color || '#FFFFFF';
+    ctx.lineWidth = (stickerOutline.width || 6) * 2;
     if (borderRadius > 0 || maskShape === 'circle') {
-      drawRoundedRect(ctx, x - stickerOutline.width / 2, y - stickerOutline.width / 2, width + stickerOutline.width, height + stickerOutline.width, borderRadius + stickerOutline.width / 2);
+      drawRoundedRect(ctx, x - (stickerOutline.width || 6) / 2, y - (stickerOutline.width || 6) / 2, width + (stickerOutline.width || 6), height + (stickerOutline.width || 6), borderRadius + (stickerOutline.width || 6) / 2);
     } else {
-      ctx.strokeRect(x - stickerOutline.width / 2, y - stickerOutline.width / 2, width + stickerOutline.width, height + stickerOutline.width);
+      ctx.strokeRect(x - (stickerOutline.width || 6) / 2, y - (stickerOutline.width || 6) / 2, width + (stickerOutline.width || 6), height + (stickerOutline.width || 6));
     }
     ctx.restore();
   }
@@ -361,10 +387,10 @@ const drawImageObject = async (ctx: CanvasRenderingContext2D, obj: ImageCanvasOb
   // 3. Image Filters
   const filterParts: string[] = [];
   if (filters) {
-    if (filters.brightness !== 0) filterParts.push(`brightness(${100 + filters.brightness}%)`);
-    if (filters.contrast !== 0) filterParts.push(`contrast(${100 + filters.contrast}%)`);
-    if (filters.saturation !== 0) filterParts.push(`saturate(${100 + filters.saturation}%)`);
-    if (filters.blur > 0) filterParts.push(`blur(${filters.blur}px)`);
+    if (filters.brightness) filterParts.push(`brightness(${100 + filters.brightness}%)`);
+    if (filters.contrast) filterParts.push(`contrast(${100 + filters.contrast}%)`);
+    if (filters.saturation) filterParts.push(`saturate(${100 + filters.saturation}%)`);
+    if (filters.blur && filters.blur > 0) filterParts.push(`blur(${filters.blur}px)`);
     if (filters.grayscale) filterParts.push(`grayscale(100%)`);
     if (filters.sepia) filterParts.push(`sepia(100%)`);
     if (filters.invert) filterParts.push(`invert(100%)`);
@@ -374,7 +400,11 @@ const drawImageObject = async (ctx: CanvasRenderingContext2D, obj: ImageCanvasOb
   }
 
   // Draw image
-  ctx.drawImage(img, x, y, width, height);
+  try {
+    ctx.drawImage(img, x, y, width, height);
+  } catch (err) {
+    // safely ignore corrupted image draw
+  }
 
   ctx.restore(); // restore clip
   ctx.restore(); // restore flip/transforms
@@ -384,7 +414,7 @@ const drawImageObject = async (ctx: CanvasRenderingContext2D, obj: ImageCanvasOb
  * Draw Shapes
  */
 const drawShapeObject = (ctx: CanvasRenderingContext2D, obj: ShapeCanvasObject) => {
-  const { shapeType, x, y, width, height, fillColor, strokeColor, strokeWidth, borderRadius } = obj;
+  const { shapeType, x = 0, y = 0, width = 100, height = 100, fillColor = '#3B82F6', strokeColor = '#FFFFFF', strokeWidth = 0, borderRadius = 0 } = obj;
 
   ctx.save();
   ctx.fillStyle = fillColor;
@@ -422,7 +452,7 @@ const drawShapeObject = (ctx: CanvasRenderingContext2D, obj: ShapeCanvasObject) 
  * Draw Creator Badges (HOT, VIRAL, PODCAST, RATING)
  */
 const drawBadgeObject = (ctx: CanvasRenderingContext2D, obj: BadgeCanvasObject) => {
-  const { x, y, width, height, badgeText, bgColor, textColor } = obj;
+  const { x = 0, y = 0, width = 200, height = 60, badgeText = '', bgColor = '#EF4444', textColor = '#FFFFFF' } = obj;
 
   ctx.save();
   // Pill shape
@@ -442,7 +472,7 @@ const drawBadgeObject = (ctx: CanvasRenderingContext2D, obj: BadgeCanvasObject) 
 
   // Text
   ctx.font = `bold ${Math.round(height * 0.46)}px "Be Vietnam Pro", sans-serif`;
-  ctx.fillStyle = textColor || '#FFFFFF';
+  ctx.fillStyle = textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(badgeText, x + width / 2, y + height / 2 + 1);
@@ -460,10 +490,10 @@ const drawSelectionBox = (ctx: CanvasRenderingContext2D, obj: CanvasObject) => {
   ctx.setLineDash([6, 4]);
 
   const pad = 6;
-  const bx = obj.x - pad;
-  const by = obj.y - pad;
-  const bw = obj.width + pad * 2;
-  const bh = obj.height + pad * 2;
+  const bx = (obj.x || 0) - pad;
+  const by = (obj.y || 0) - pad;
+  const bw = (obj.width || 100) + pad * 2;
+  const bh = (obj.height || 100) + pad * 2;
 
   ctx.strokeRect(bx, by, bw, bh);
 
@@ -475,14 +505,14 @@ const drawSelectionBox = (ctx: CanvasRenderingContext2D, obj: CanvasObject) => {
   const handleSize = 10;
 
   const points = [
-    { x: bx, y: by }, // Top-Left
-    { x: bx + bw / 2, y: by }, // Top-Center
-    { x: bx + bw, y: by }, // Top-Right
-    { x: bx + bw, y: by + bh / 2 }, // Right-Center
-    { x: bx + bw, y: by + bh }, // Bottom-Right
-    { x: bx + bw / 2, y: by + bh }, // Bottom-Center
-    { x: bx, y: by + bh }, // Bottom-Left
-    { x: bx, y: by + bh / 2 }, // Left-Center
+    { x: bx, y: by },
+    { x: bx + bw / 2, y: by },
+    { x: bx + bw, y: by },
+    { x: bx + bw, y: by + bh / 2 },
+    { x: bx + bw, y: by + bh },
+    { x: bx + bw / 2, y: by + bh },
+    { x: bx, y: by + bh },
+    { x: bx, y: by + bh / 2 },
   ];
 
   points.forEach(p => {
@@ -514,10 +544,6 @@ const drawSafeZoneOverlay = (ctx: CanvasRenderingContext2D, width: number, heigh
   ctx.save();
 
   if (zoneType === 'tiktok') {
-    // 9:16 TikTok Safe Zone Overlay
-    // Top area (Header/Search/Tabs): 15%
-    // Bottom area (Caption, Song, Home Bar): 22%
-    // Right area (Like, Comment, Share, Profile Avatar): 18% width on right
     ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
     ctx.strokeStyle = '#EF4444';
     ctx.lineWidth = 2;
@@ -527,27 +553,21 @@ const drawSafeZoneOverlay = (ctx: CanvasRenderingContext2D, width: number, heigh
     const bottomH = height * 0.22;
     const rightW = width * 0.18;
 
-    // Top block
     ctx.fillRect(0, 0, width, topH);
     ctx.strokeRect(0, 0, width, topH);
 
-    // Bottom block
     ctx.fillRect(0, height - bottomH, width, bottomH);
     ctx.strokeRect(0, height - bottomH, width, bottomH);
 
-    // Right sidebar block
     ctx.fillRect(width - rightW, topH, rightW, height - topH - bottomH);
     ctx.strokeRect(width - rightW, topH, rightW, height - topH - bottomH);
 
-    // Safe Zone Label
     ctx.fillStyle = '#EF4444';
     ctx.font = 'bold 24px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('⚠️ VÙNG NÚT BẤM TIKTOK (TRÁNH ĐẶT CHỮ/CHỦ THỂ TẠI ĐÂY)', width / 2, height - bottomH / 2);
     ctx.fillText('⚠️ VÙNG THANH TÌM KIẾM / HEADER', width / 2, topH / 2);
   } else if (zoneType === 'youtube') {
-    // 16:9 YouTube Thumbnail Safe Zone
-    // Bottom-right corner video timestamp: 180px x 60px
     const stampW = width * 0.16;
     const stampH = height * 0.12;
     const stampX = width - stampW - 20;
@@ -605,7 +625,7 @@ export const drawRoundedRect = (
   height: number,
   radius: number
 ) => {
-  const r = Math.min(radius, width / 2, height / 2);
+  const r = Math.max(0, Math.min(radius || 0, width / 2, height / 2));
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + width - r, y);

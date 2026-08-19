@@ -25,7 +25,51 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
   onUpdateStyle,
   onUpdateText
 }) => {
-  const { text, style } = selectedObject;
+  const text = selectedObject.text || '';
+  const style = selectedObject.style || ({} as TextStyle);
+
+  const gradient = style.gradient || {
+    enabled: false,
+    startColor: '#FFE600',
+    endColor: '#FF3B30',
+    direction: 'diagonal' as const
+  };
+
+  const stroke = style.stroke || {
+    enabled: false,
+    color: '#000000',
+    width: 6,
+    doubleStroke: {
+      enabled: false,
+      color: '#FFFFFF',
+      width: 4
+    }
+  };
+
+  const effect3D = style.effect3D || {
+    enabled: false,
+    depth: 8,
+    color: '#000000',
+    angle: 45
+  };
+
+  const pillBackground = style.pillBackground || {
+    enabled: false,
+    color: '#FFE500',
+    paddingX: 20,
+    paddingY: 10,
+    borderRadius: 12,
+    opacity: 1
+  };
+
+  const shadow = style.shadow || {
+    enabled: false,
+    color: 'rgba(0,0,0,0.6)',
+    blur: 15,
+    offsetX: 4,
+    offsetY: 6,
+    glow: false
+  };
 
   return (
     <div className="space-y-5 text-xs text-neutral-300">
@@ -50,7 +94,7 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
             Phông Chữ Tiếng Việt
           </label>
           <select
-            value={style.fontFamily}
+            value={style.fontFamily || 'Montserrat'}
             onChange={(e) => onUpdateStyle({ fontFamily: e.target.value })}
             className="w-full bg-neutral-950 border border-neutral-700 focus:border-indigo-500 rounded-xl px-3 py-2 text-sm text-white outline-none cursor-pointer"
           >
@@ -65,12 +109,12 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
         {/* Font Size & Alignment Bar */}
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            <span className="text-[10px] text-neutral-500 block mb-1">Cỡ chữ: {style.fontSize}px</span>
+            <span className="text-[10px] text-neutral-500 block mb-1">Cỡ chữ: {style.fontSize || 48}px</span>
             <input
               type="range"
               min="16"
               max="200"
-              value={style.fontSize}
+              value={style.fontSize || 48}
               onChange={(e) => onUpdateStyle({ fontSize: Number(e.target.value) })}
               className="w-full accent-indigo-500"
             />
@@ -85,7 +129,7 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
             </button>
             <button
               onClick={() => onUpdateStyle({ align: 'center' })}
-              className={`p-1.5 rounded ${style.align === 'center' ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
+              className={`p-1.5 rounded ${style.align === 'center' || !style.align ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
             >
               <AlignCenter className="w-4 h-4" />
             </button>
@@ -101,7 +145,7 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
         {/* Text Style: Bold, Italic, Uppercase */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => onUpdateStyle({ fontWeight: style.fontWeight === '900' ? '400' : '900' })}
+            onClick={() => onUpdateStyle({ fontWeight: style.fontWeight === '900' || style.fontWeight === 900 ? '400' : '900' })}
             className={`flex-1 py-1.5 rounded-lg border flex items-center justify-center gap-1.5 font-bold ${
               style.fontWeight === '900' || style.fontWeight === 900
                 ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400'
@@ -144,8 +188,8 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           </span>
           <div className="flex items-center gap-1 bg-neutral-900 p-0.5 rounded-md border border-neutral-800">
             <button
-              onClick={() => onUpdateStyle({ gradient: { ...style.gradient!, enabled: false } })}
-              className={`px-2 py-0.5 text-[10px] rounded font-medium ${!style.gradient?.enabled ? 'bg-indigo-600 text-white' : 'text-neutral-400'}`}
+              onClick={() => onUpdateStyle({ gradient: { ...gradient, enabled: false } })}
+              className={`px-2 py-0.5 text-[10px] rounded font-medium ${!gradient.enabled ? 'bg-indigo-600 text-white' : 'text-neutral-400'}`}
             >
               Đơn sắc
             </button>
@@ -154,30 +198,30 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
                 onUpdateStyle({
                   gradient: {
                     enabled: true,
-                    startColor: style.gradient?.startColor || '#FFE600',
-                    endColor: style.gradient?.endColor || '#FF3B30',
+                    startColor: gradient.startColor || '#FFE600',
+                    endColor: gradient.endColor || '#FF3B30',
                     direction: 'diagonal'
                   }
                 })
               }
-              className={`px-2 py-0.5 text-[10px] rounded font-medium ${style.gradient?.enabled ? 'bg-indigo-600 text-white' : 'text-neutral-400'}`}
+              className={`px-2 py-0.5 text-[10px] rounded font-medium ${gradient.enabled ? 'bg-indigo-600 text-white' : 'text-neutral-400'}`}
             >
               Gradient
             </button>
           </div>
         </div>
 
-        {!style.gradient?.enabled ? (
+        {!gradient.enabled ? (
           <div className="flex items-center gap-2">
             <input
               type="color"
-              value={style.fillColor}
+              value={style.fillColor || '#FFFFFF'}
               onChange={(e) => onUpdateStyle({ fillColor: e.target.value })}
               className="w-8 h-8 rounded-lg cursor-pointer bg-transparent"
             />
             <input
               type="text"
-              value={style.fillColor}
+              value={style.fillColor || '#FFFFFF'}
               onChange={(e) => onUpdateStyle({ fillColor: e.target.value })}
               className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1 text-xs text-white uppercase font-mono"
             />
@@ -187,10 +231,10 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
             <div className="flex items-center gap-1.5">
               <input
                 type="color"
-                value={style.gradient.startColor}
+                value={gradient.startColor || '#FFE600'}
                 onChange={(e) =>
                   onUpdateStyle({
-                    gradient: { ...style.gradient!, startColor: e.target.value }
+                    gradient: { ...gradient, startColor: e.target.value }
                   })
                 }
                 className="w-7 h-7 rounded cursor-pointer"
@@ -200,10 +244,10 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
             <div className="flex items-center gap-1.5">
               <input
                 type="color"
-                value={style.gradient.endColor}
+                value={gradient.endColor || '#FF3B30'}
                 onChange={(e) =>
                   onUpdateStyle({
-                    gradient: { ...style.gradient!, endColor: e.target.value }
+                    gradient: { ...gradient, endColor: e.target.value }
                   })
                 }
                 className="w-7 h-7 rounded cursor-pointer"
@@ -223,25 +267,25 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           </span>
           <input
             type="checkbox"
-            checked={style.stroke.enabled}
+            checked={stroke.enabled}
             onChange={(e) =>
               onUpdateStyle({
-                stroke: { ...style.stroke, enabled: e.target.checked }
+                stroke: { ...stroke, enabled: e.target.checked }
               })
             }
             className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
           />
         </div>
 
-        {style.stroke.enabled && (
+        {stroke.enabled && (
           <div className="space-y-2.5 pt-1">
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={style.stroke.color}
+                value={stroke.color || '#000000'}
                 onChange={(e) =>
                   onUpdateStyle({
-                    stroke: { ...style.stroke, color: e.target.value }
+                    stroke: { ...stroke, color: e.target.value }
                   })
                 }
                 className="w-7 h-7 rounded cursor-pointer"
@@ -249,16 +293,16 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
               <div className="flex-1">
                 <div className="flex justify-between text-[10px] text-neutral-400">
                   <span>Độ dày viền</span>
-                  <span>{style.stroke.width}px</span>
+                  <span>{stroke.width || 6}px</span>
                 </div>
                 <input
                   type="range"
                   min="1"
                   max="30"
-                  value={style.stroke.width}
+                  value={stroke.width || 6}
                   onChange={(e) =>
                     onUpdateStyle({
-                      stroke: { ...style.stroke, width: Number(e.target.value) }
+                      stroke: { ...stroke, width: Number(e.target.value) }
                     })
                   }
                   className="w-full accent-indigo-500"
@@ -272,15 +316,15 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
                 <span className="text-[10px] font-semibold text-neutral-400">Viền kép ngoài (Double Stroke)</span>
                 <input
                   type="checkbox"
-                  checked={style.stroke.doubleStroke?.enabled ?? false}
+                  checked={stroke.doubleStroke?.enabled ?? false}
                   onChange={(e) =>
                     onUpdateStyle({
                       stroke: {
-                        ...style.stroke,
+                        ...stroke,
                         doubleStroke: {
                           enabled: e.target.checked,
-                          color: style.stroke.doubleStroke?.color || '#FFFFFF',
-                          width: style.stroke.doubleStroke?.width || 5
+                          color: stroke.doubleStroke?.color || '#FFFFFF',
+                          width: stroke.doubleStroke?.width || 4
                         }
                       }
                     })
@@ -288,16 +332,19 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
                   className="w-3.5 h-3.5 accent-indigo-500 cursor-pointer"
                 />
               </div>
-              {style.stroke.doubleStroke?.enabled && (
+              {stroke.doubleStroke?.enabled && (
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
-                    value={style.stroke.doubleStroke.color}
+                    value={stroke.doubleStroke.color || '#FFFFFF'}
                     onChange={(e) =>
                       onUpdateStyle({
                         stroke: {
-                          ...style.stroke,
-                          doubleStroke: { ...style.stroke.doubleStroke!, color: e.target.value }
+                          ...stroke,
+                          doubleStroke: {
+                            ...stroke.doubleStroke!,
+                            color: e.target.value
+                          }
                         }
                       })
                     }
@@ -307,12 +354,15 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
                     type="range"
                     min="1"
                     max="15"
-                    value={style.stroke.doubleStroke.width}
+                    value={stroke.doubleStroke.width || 4}
                     onChange={(e) =>
                       onUpdateStyle({
                         stroke: {
-                          ...style.stroke,
-                          doubleStroke: { ...style.stroke.doubleStroke!, width: Number(e.target.value) }
+                          ...stroke,
+                          doubleStroke: {
+                            ...stroke.doubleStroke!,
+                            width: Number(e.target.value)
+                          }
                         }
                       })
                     }
@@ -334,14 +384,12 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           </span>
           <input
             type="checkbox"
-            checked={style.effect3D?.enabled ?? false}
+            checked={effect3D.enabled}
             onChange={(e) =>
               onUpdateStyle({
                 effect3D: {
-                  enabled: e.target.checked,
-                  depth: style.effect3D?.depth || 10,
-                  color: style.effect3D?.color || '#000000',
-                  angle: style.effect3D?.angle || 45
+                  ...effect3D,
+                  enabled: e.target.checked
                 }
               })
             }
@@ -349,15 +397,15 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           />
         </div>
 
-        {style.effect3D?.enabled && (
+        {effect3D.enabled && (
           <div className="space-y-2 pt-1">
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={style.effect3D.color}
+                value={effect3D.color || '#000000'}
                 onChange={(e) =>
                   onUpdateStyle({
-                    effect3D: { ...style.effect3D!, color: e.target.value }
+                    effect3D: { ...effect3D, color: e.target.value }
                   })
                 }
                 className="w-7 h-7 rounded cursor-pointer"
@@ -365,16 +413,16 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
               <div className="flex-1">
                 <div className="flex justify-between text-[10px] text-neutral-400">
                   <span>Độ sâu 3D</span>
-                  <span>{style.effect3D.depth}px</span>
+                  <span>{effect3D.depth || 8}px</span>
                 </div>
                 <input
                   type="range"
                   min="1"
                   max="25"
-                  value={style.effect3D.depth}
+                  value={effect3D.depth || 8}
                   onChange={(e) =>
                     onUpdateStyle({
-                      effect3D: { ...style.effect3D!, depth: Number(e.target.value) }
+                      effect3D: { ...effect3D, depth: Number(e.target.value) }
                     })
                   }
                   className="w-full accent-indigo-500"
@@ -394,16 +442,12 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           </span>
           <input
             type="checkbox"
-            checked={style.pillBackground?.enabled ?? false}
+            checked={pillBackground.enabled}
             onChange={(e) =>
               onUpdateStyle({
                 pillBackground: {
-                  enabled: e.target.checked,
-                  color: style.pillBackground?.color || '#FFE500',
-                  paddingX: style.pillBackground?.paddingX || 20,
-                  paddingY: style.pillBackground?.paddingY || 10,
-                  borderRadius: style.pillBackground?.borderRadius || 12,
-                  opacity: style.pillBackground?.opacity ?? 1
+                  ...pillBackground,
+                  enabled: e.target.checked
                 }
               })
             }
@@ -411,15 +455,15 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           />
         </div>
 
-        {style.pillBackground?.enabled && (
+        {pillBackground.enabled && (
           <div className="space-y-2 pt-1">
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={style.pillBackground.color}
+                value={pillBackground.color || '#FFE500'}
                 onChange={(e) =>
                   onUpdateStyle({
-                    pillBackground: { ...style.pillBackground!, color: e.target.value }
+                    pillBackground: { ...pillBackground, color: e.target.value }
                   })
                 }
                 className="w-7 h-7 rounded cursor-pointer"
@@ -427,16 +471,16 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
               <div className="flex-1">
                 <div className="flex justify-between text-[10px] text-neutral-400">
                   <span>Bo góc khung</span>
-                  <span>{style.pillBackground.borderRadius}px</span>
+                  <span>{pillBackground.borderRadius || 12}px</span>
                 </div>
                 <input
                   type="range"
                   min="0"
                   max="35"
-                  value={style.pillBackground.borderRadius}
+                  value={pillBackground.borderRadius || 12}
                   onChange={(e) =>
                     onUpdateStyle({
-                      pillBackground: { ...style.pillBackground!, borderRadius: Number(e.target.value) }
+                      pillBackground: { ...pillBackground, borderRadius: Number(e.target.value) }
                     })
                   }
                   className="w-full accent-indigo-500"
@@ -456,25 +500,28 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
           </span>
           <input
             type="checkbox"
-            checked={style.shadow.enabled}
+            checked={shadow.enabled}
             onChange={(e) =>
               onUpdateStyle({
-                shadow: { ...style.shadow, enabled: e.target.checked }
+                shadow: {
+                  ...shadow,
+                  enabled: e.target.checked
+                }
               })
             }
             className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
           />
         </div>
 
-        {style.shadow.enabled && (
+        {shadow.enabled && (
           <div className="space-y-2 pt-1">
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={style.shadow.color.startsWith('#') ? style.shadow.color : '#00FFFF'}
+                value={shadow.color?.startsWith('#') ? shadow.color : '#00FFFF'}
                 onChange={(e) =>
                   onUpdateStyle({
-                    shadow: { ...style.shadow, color: e.target.value }
+                    shadow: { ...shadow, color: e.target.value }
                   })
                 }
                 className="w-7 h-7 rounded cursor-pointer"
@@ -482,16 +529,16 @@ export const TypographyControls: React.FC<TypographyControlsProps> = ({
               <div className="flex-1">
                 <div className="flex justify-between text-[10px] text-neutral-400">
                   <span>Độ mờ phát sáng (Blur)</span>
-                  <span>{style.shadow.blur}px</span>
+                  <span>{shadow.blur || 15}px</span>
                 </div>
                 <input
                   type="range"
                   min="0"
                   max="50"
-                  value={style.shadow.blur}
+                  value={shadow.blur || 15}
                   onChange={(e) =>
                     onUpdateStyle({
-                      shadow: { ...style.shadow, blur: Number(e.target.value) }
+                      shadow: { ...shadow, blur: Number(e.target.value) }
                     })
                   }
                   className="w-full accent-indigo-500"
